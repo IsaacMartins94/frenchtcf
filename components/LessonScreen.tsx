@@ -230,7 +230,7 @@ export default function LessonScreen({ module, onBack, onComplete }: Props) {
           return (
             <button onClick={() => speak(audioText)}
               className="flex items-center gap-2 mb-3 px-3 py-2 rounded-xl bg-blue-50 border border-blue-100 text-blue-600 font-bold text-sm hover:bg-blue-100 transition-colors">
-              <span>🔊</span> <span className="text-gray-700">{audioText}</span>
+              <span>🔊</span> <span className="text-gray-700">{answered ? audioText : 'Ouvir a frase'}</span>
             </button>
           );
         })()}
