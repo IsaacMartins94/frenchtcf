@@ -261,7 +261,10 @@ export default function LessonScreen({ module, onBack, onComplete }: Props) {
             <div className="w-12 h-12 rounded-full flex items-center justify-center text-xl flex-shrink-0 bg-blue-500 text-white">
               🔊
             </div>
-            <p className="font-bold text-gray-900 text-lg leading-snug">{ex.audio}</p>
+            {ex.type === 'MCQ_Trans'
+              ? <p className="font-bold text-gray-900 text-lg leading-snug">{ex.audio}</p>
+              : <p className="font-bold text-gray-500 text-base">{answered ? ex.audio : 'Ouvir a frase'}</p>
+            }
           </button>
         )}
 
