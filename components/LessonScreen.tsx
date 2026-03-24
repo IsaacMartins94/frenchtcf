@@ -27,7 +27,17 @@ function speak(text: string) {
   if (typeof window === 'undefined') return;
   const u = new SpeechSynthesisUtterance(text);
   u.lang = 'fr-FR'; u.rate = 0.85; u.pitch = 1.05;
+  window.speechSynthesis.cancel();
   window.speechSynthesis.speak(u);
+}
+
+// Extrai frase francesa de perguntas MCQ como: 'HABITER — "Vous ___ à Paris ?"'
+// e substitui ___ pela resposta correta
+function getMCQAudio(question: string, answer: string): string | null {
+  const match = question.match(/"([^"]+)"/);
+  if (!match) return null;
+  const phrase = match[1].replace(/___/g, answer);
+  return phrase;
 }
 
 function shuffle<T>(arr: T[]): T[] {
@@ -74,7 +84,7 @@ export default function LessonScreen({ module, onBack, onComplete }: Props) {
   const ex = exercises[current];
   const progressPct = Math.round((current / exercises.length) * 100);
 
-  // Init word order
+  // Init exercise + auto-play audio
   useEffect(() => {
     if (ex?.type === 'WordOrder') {
       setAvailableWords(shuffle(ex.words || []));
@@ -84,7 +94,12 @@ export default function LessonScreen({ module, onBack, onComplete }: Props) {
     setTypedAnswer('');
     setAnswered(false);
     setIsCorrect(false);
-  }, [current, ex?.type]);
+    // Auto-play audio for MCQ_Trans exercises
+    if (ex?.type === 'MCQ_Trans' && ex.audio) {
+      const timer = setTimeout(() => speak(ex.audio!), 400);
+      return () => clearTimeout(timer);
+    }
+  }, [current]);
 
   const canVerify = () => {
     if (ex.type === 'MCQ' || ex.type === 'MCQ_Trans') return selected !== null;
@@ -194,22 +209,38 @@ export default function LessonScreen({ module, onBack, onComplete }: Props) {
            ex.type === 'WordOrder' ? 'Monte a frase' : 'Complete'}
         </p>
 
-        {/* Audio phrase */}
-        {ex.audio && (
+        {/* Audio + frase (MCQ_Trans e WordOrder) */}
+        {ex.audio && (ex.type === 'MCQ_Trans' || ex.type === 'WordOrder') && (
           <button onClick={() => speak(ex.audio!)}
-            className="flex items-center gap-3 mb-4 text-left group">
-            <div className="w-14 h-14 rounded-full flex items-center justify-center text-2xl flex-shrink-0"
-              style={{ background: '#ddf4ff' }}>
+            className="flex items-center gap-3 mb-4 text-left w-full p-3 rounded-2xl border-2 border-blue-100 bg-blue-50 hover:bg-blue-100 transition-colors">
+            <div className="w-12 h-12 rounded-full flex items-center justify-center text-xl flex-shrink-0 bg-blue-500 text-white">
               🔊
             </div>
-            {ex.type === 'MCQ_Trans' && (
-              <p className="font-bold text-gray-900 text-lg leading-snug">{ex.audio}</p>
-            )}
+            <p className="font-bold text-gray-900 text-lg leading-snug">{ex.audio}</p>
           </button>
         )}
 
+        {/* Botão de áudio para MCQ — usa audio do dado ou gera da pergunta */}
+        {ex.type === 'MCQ' && (() => {
+          const audioText = ex.audio || getMCQAudio(ex.question, ex.answer);
+          if (!audioText) return null;
+          return (
+            <button onClick={() => speak(audioText)}
+              className="flex items-center gap-2 mb-3 px-3 py-2 rounded-xl bg-blue-50 border border-blue-100 text-blue-600 font-bold text-sm hover:bg-blue-100 transition-colors">
+              <span>🔊</span> <span className="text-gray-700">{audioText}</span>
+            </button>
+          );
+        })()}
+
         <p className="font-black text-gray-900 text-xl mb-1 leading-snug">{ex.question}</p>
-        {ex.translation && <p className="text-gray-400 text-sm mb-4">{ex.translation}</p>}
+
+        {/* Tradução/dica para WordOrder */}
+        {ex.translation && (
+          <div className="flex items-center gap-2 mb-4 px-3 py-2 rounded-xl bg-yellow-50 border border-yellow-200">
+            <span className="text-yellow-500">🇧🇷</span>
+            <p className="text-yellow-800 font-bold text-sm">{ex.translation}</p>
+          </div>
+        )}
 
         {/* MCQ choices */}
         {(ex.type === 'MCQ' || ex.type === 'MCQ_Trans') && (
