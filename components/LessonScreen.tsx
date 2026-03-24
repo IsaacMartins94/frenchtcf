@@ -31,13 +31,10 @@ function speak(text: string) {
   window.speechSynthesis.speak(u);
 }
 
-// Extrai frase francesa de perguntas MCQ como: 'HABITER — "Vous ___ à Paris ?"'
-// e substitui ___ pela resposta correta
 function getMCQAudio(question: string, answer: string): string | null {
   const match = question.match(/"([^"]+)"/);
   if (!match) return null;
-  const phrase = match[1].replace(/___/g, answer);
-  return phrase;
+  return match[1].replace(/___/g, answer);
 }
 
 function shuffle<T>(arr: T[]): T[] {
@@ -70,9 +67,13 @@ export default function LessonScreen({ module, onBack, onComplete }: Props) {
   });
 
   const [current, setCurrent] = useState(prog?.last_idx || 0);
-  const [hearts, setHearts] = useState(5);
   const [xp, setXp] = useState(0);
   const [correct, setCorrect] = useState(0);
+
+  // Wrong exercises collected during main session for in-session retry
+  const [wrongExercises, setWrongExercises] = useState<Exercise[]>([]);
+  const [mode, setMode] = useState<'main' | 'retry'>('main');
+  const [showRetryPrompt, setShowRetryPrompt] = useState(false);
 
   // Per-exercise state
   const [selected, setSelected] = useState<string | null>(null);
@@ -83,8 +84,9 @@ export default function LessonScreen({ module, onBack, onComplete }: Props) {
   const [isCorrect, setIsCorrect] = useState(false);
   const [shakeKey, setShakeKey] = useState(0);
 
-  const ex = exercises[current];
-  const progressPct = Math.round((current / exercises.length) * 100);
+  const activeExercises = mode === 'retry' ? wrongExercises : exercises;
+  const ex = activeExercises[current];
+  const progressPct = Math.round(((current + 1) / activeExercises.length) * 100);
 
   // Init exercise + auto-play audio
   useEffect(() => {
@@ -96,27 +98,55 @@ export default function LessonScreen({ module, onBack, onComplete }: Props) {
     setTypedAnswer('');
     setAnswered(false);
     setIsCorrect(false);
-    // Auto-play audio for MCQ_Trans exercises
     if (ex?.type === 'MCQ_Trans' && ex.audio) {
       const timer = setTimeout(() => speak(ex.audio!), 400);
       return () => clearTimeout(timer);
     }
-  }, [current]);
+  }, [current, mode]);
 
   const canVerify = () => {
+    if (!ex) return false;
     if (ex.type === 'MCQ' || ex.type === 'MCQ_Trans') return selected !== null;
     if (ex.type === 'WordOrder') return wordOrder.length > 0;
     if (ex.type === 'FillIn') return typedAnswer.trim().length > 0;
     return false;
   };
 
+  const finishSession = useCallback((finalXp: number, finalCorrect: number) => {
+    const totalPct = Math.round((finalCorrect / exercises.length) * 100);
+    const today = new Date().toDateString();
+    if (totalPct >= 70) {
+      const yesterday = new Date(Date.now() - 86400000).toDateString();
+      const newStreak = stats.last_day === yesterday || stats.last_day === today
+        ? stats.streak + (stats.last_day !== today ? 1 : 0)
+        : 1;
+      updateStats({ total_xp: stats.total_xp + finalXp, streak: newStreak, last_day: today });
+    } else {
+      updateStats({ total_xp: stats.total_xp + finalXp });
+    }
+    onComplete(finalXp, finalCorrect, exercises.length);
+  }, [exercises.length, stats, updateStats, onComplete]);
+
+  const startRetry = () => {
+    setMode('retry');
+    setCurrent(0);
+    setShowRetryPrompt(false);
+  };
+
   const verify = useCallback(() => {
     if (answered) {
-      // Advance
-      if (hearts <= 0 || current >= exercises.length - 1) {
-        const totalPct = Math.round((correct / exercises.length) * 100);
-        updateStreak(totalPct);
-        onComplete(xp, correct, exercises.length);
+      // Advance to next or finish
+      if (current >= activeExercises.length - 1) {
+        if (mode === 'retry') {
+          finishSession(xp, correct);
+          return;
+        }
+        // Main session done — offer retry if there were errors
+        if (wrongExercises.length > 0) {
+          setShowRetryPrompt(true);
+        } else {
+          finishSession(xp, correct);
+        }
         return;
       }
       setCurrent((c) => c + 1);
@@ -140,7 +170,6 @@ export default function LessonScreen({ module, onBack, onComplete }: Props) {
       setCorrect((v) => v + 1);
     } else {
       playSound('wrong');
-      setHearts((h) => h - 1);
       setShakeKey((k) => k + 1);
       addError({
         module_id: module.id,
@@ -150,43 +179,58 @@ export default function LessonScreen({ module, onBack, onComplete }: Props) {
         mastered: false,
         count: 1,
       });
+      // Collect for in-session retry (main mode only, no duplicates)
+      if (mode === 'main') {
+        setWrongExercises((prev) =>
+          prev.some((e) => e.question === ex.question) ? prev : [...prev, ex]
+        );
+      }
     }
 
-    // Save progress
-    saveProgress({
-      module_id: module.id,
-      completed: Math.max(prog?.completed || 0, current + (ok ? 1 : 0)),
-      last_idx: current,
-      exercise_order: exerciseIndices,
-      xp: xp + (ok ? 10 : 0),
-    });
-  }, [answered, ex, selected, wordOrder, typedAnswer, hearts, current, exercises, correct, xp]);
-
-  function updateStreak(pct: number) {
-    const today = new Date().toDateString();
-    if (pct >= 70) {
-      const yesterday = new Date(Date.now() - 86400000).toDateString();
-      const newStreak = stats.last_day === yesterday || stats.last_day === today ? stats.streak + (stats.last_day !== today ? 1 : 0) : 1;
-      updateStats({ total_xp: stats.total_xp + xp, streak: newStreak, last_day: today });
-    } else {
-      updateStats({ total_xp: stats.total_xp + xp });
+    // Save progress (main mode only)
+    if (mode === 'main') {
+      saveProgress({
+        module_id: module.id,
+        completed: Math.max(prog?.completed || 0, current + (ok ? 1 : 0)),
+        last_idx: current,
+        exercise_order: exerciseIndices,
+        xp: xp + (ok ? 10 : 0),
+      });
     }
-  }
+  }, [answered, ex, selected, wordOrder, typedAnswer, current, activeExercises, correct, xp, wrongExercises, mode, finishSession]);
 
   // Keyboard shortcut
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Enter' && canVerify()) verify();
-    };
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Enter' && canVerify()) verify(); };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [verify]);
 
-  if (hearts <= 0 && answered) {
-    onComplete(xp, correct, exercises.length);
-    return null;
+  // ── Retry prompt screen ─────────────────────────────
+  if (showRetryPrompt) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-white">
+        <div className="text-center max-w-sm w-full">
+          <div className="text-6xl mb-4">🔁</div>
+          <h2 className="text-2xl font-black text-gray-900 mb-2">
+            {wrongExercises.length} {wrongExercises.length === 1 ? 'erro' : 'erros'} nesta sessão
+          </h2>
+          <p className="text-gray-400 mb-8">Quer praticar agora os exercícios que você errou?</p>
+          <button onClick={startRetry}
+            className="w-full py-4 rounded-xl font-black text-white mb-3"
+            style={{ background: '#58cc02', boxShadow: '0 4px 0 #46a302' }}>
+            Refazer os erros ({wrongExercises.length})
+          </button>
+          <button onClick={() => finishSession(xp, correct)}
+            className="w-full py-4 rounded-xl font-black border-2 border-gray-200 text-gray-600 bg-white">
+            Encerrar sessão
+          </button>
+        </div>
+      </div>
+    );
   }
 
+  // ── Main exercise screen ────────────────────────────
   return (
     <div className="min-h-screen flex flex-col bg-white">
       {/* Header */}
@@ -194,14 +238,12 @@ export default function LessonScreen({ module, onBack, onComplete }: Props) {
         <button onClick={onBack} className="text-gray-300 hover:text-gray-600 text-xl p-1">✕</button>
         <div className="flex-1 bg-gray-100 h-4 rounded-full overflow-hidden">
           <div className="h-full rounded-full transition-all duration-500"
-            style={{ width: `${progressPct}%`, background: '#58cc02' }} />
+            style={{ width: `${progressPct}%`, background: mode === 'retry' ? '#ff9600' : '#58cc02' }} />
         </div>
-        <div className="flex gap-1">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <span key={i} className={i < hearts ? 'text-red-500' : 'text-gray-200'}>❤️</span>
-          ))}
-        </div>
-        <span className="text-yellow-600 font-bold text-sm bg-yellow-50 px-2 py-1 rounded-full">⚡{xp}</span>
+        <span className="text-gray-500 font-bold text-sm min-w-fit tabular-nums">
+          {mode === 'retry' && <span className="mr-1 text-orange-400">🔁</span>}
+          {current + 1}/{activeExercises.length}
+        </span>
       </div>
 
       {/* Body */}
@@ -223,7 +265,7 @@ export default function LessonScreen({ module, onBack, onComplete }: Props) {
           </button>
         )}
 
-        {/* Botão de áudio para MCQ — usa audio do dado ou gera da pergunta */}
+        {/* Botão de áudio para MCQ — esconde o texto antes de responder */}
         {ex.type === 'MCQ' && (() => {
           const audioText = ex.audio || getMCQAudio(ex.question, ex.answer);
           if (!audioText) return null;
@@ -237,7 +279,7 @@ export default function LessonScreen({ module, onBack, onComplete }: Props) {
 
         <p className="font-black text-gray-900 text-xl mb-1 leading-snug">{ex.question}</p>
 
-        {/* Tradução/dica para WordOrder */}
+        {/* Tradução/dica */}
         {ex.translation && (
           <div className="flex items-center gap-2 mb-4 px-3 py-2 rounded-xl bg-yellow-50 border border-yellow-200">
             <span className="text-yellow-500">🇧🇷</span>
@@ -333,7 +375,7 @@ export default function LessonScreen({ module, onBack, onComplete }: Props) {
             background: answered ? (isCorrect ? '#58cc02' : '#ff4b4b') : '#58cc02',
             boxShadow: answered ? (isCorrect ? '0 4px 0 #46a302' : '0 4px 0 #c63b3b') : '0 4px 0 #46a302',
           }}>
-          {!answered ? 'VERIFICAR' : current >= exercises.length - 1 ? 'CONCLUIR' : 'CONTINUAR'}
+          {!answered ? 'VERIFICAR' : current >= activeExercises.length - 1 ? 'CONCLUIR' : 'CONTINUAR'}
         </button>
       </div>
     </div>
