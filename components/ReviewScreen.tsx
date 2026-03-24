@@ -13,6 +13,9 @@ const MODULE_NAMES: Record<string, string> = {
   passe_compose: 'Passé Composé',
   vocab_daily: 'Vocabulário',
   conj_focus: 'Conjugação',
+  verbs_top_1: 'Verbos Top — P1',
+  verbs_top_2: 'Verbos Top — P2',
+  verbs_top_3: 'Verbos Top — P3',
 };
 
 export default function ReviewScreen({ onGoHome }: Props) {

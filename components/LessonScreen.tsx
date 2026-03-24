@@ -59,12 +59,14 @@ export default function LessonScreen({ module, onBack, onComplete }: Props) {
   const { progress, saveProgress, addError, updateStats, stats } = useGameStore();
 
   const prog = progress[module.id];
-  const [exercises] = useState<Exercise[]>(() => {
+  const [[exercises, exerciseIndices]] = useState<[Exercise[], number[]]>(() => {
     if (prog?.exercise_order?.length) {
-      return prog.exercise_order.map((i) => module.exercises[i]);
+      const exs = prog.exercise_order.map((i) => module.exercises[i]);
+      return [exs, prog.exercise_order];
     }
-    const order = shuffle([...Array(module.exercises.length).keys()]);
-    return order.map((i) => module.exercises[i]);
+    const indices = shuffle([...Array(module.exercises.length).keys()]);
+    const exs = indices.map((i) => module.exercises[i]);
+    return [exs, indices];
   });
 
   const [current, setCurrent] = useState(prog?.last_idx || 0);
@@ -126,7 +128,8 @@ export default function LessonScreen({ module, onBack, onComplete }: Props) {
     if (ex.type === 'WordOrder') userAnswer = wordOrder.join(' ');
     if (ex.type === 'FillIn') userAnswer = typedAnswer.trim();
 
-    const ok = userAnswer === ex.answer || userAnswer === ex.answer.replace(' ?', '').replace('?', '');
+    const norm = (s: string) => s.replace(/ [?!]$/, '').replace(/[.?!]$/, '').trim();
+    const ok = userAnswer === ex.answer || norm(userAnswer) === norm(ex.answer);
 
     setAnswered(true);
     setIsCorrect(ok);
@@ -154,7 +157,7 @@ export default function LessonScreen({ module, onBack, onComplete }: Props) {
       module_id: module.id,
       completed: Math.max(prog?.completed || 0, current + (ok ? 1 : 0)),
       last_idx: current,
-      exercise_order: exercises.map((_, i) => i),
+      exercise_order: exerciseIndices,
       xp: xp + (ok ? 10 : 0),
     });
   }, [answered, ex, selected, wordOrder, typedAnswer, hearts, current, exercises, correct, xp]);
