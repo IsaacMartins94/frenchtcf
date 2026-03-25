@@ -2,12 +2,25 @@
 import { MODULES } from '@/data/modules';
 import { useGameStore } from '@/lib/gameStore';
 
-const LEVEL_COLOR: Record<string, string> = {
-  A1: '#58cc02',
-  A2: '#1cb0f6',
-  B1: '#ce82ff',
-  B2: '#ffc800',
+const SECTION_COLORS: Record<string, string> = {
+  pres: '#58cc02',
+  pc: '#1cb0f6',
 };
+
+const SECTIONS = [
+  {
+    key: 'pres',
+    title: '🗣️ Présent',
+    subtitle: 'Tempo presente dos 30 verbos essenciais',
+    moduleIds: ['pres_b1', 'pres_b2', 'pres_b3'],
+  },
+  {
+    key: 'pc',
+    title: '⏪ Passé Composé',
+    subtitle: 'Passado composto — ações concluídas',
+    moduleIds: ['pc_b1', 'pc_b2'],
+  },
+];
 
 interface Props {
   onStartModule: (moduleId: string) => void;
@@ -23,9 +36,10 @@ export default function HomeScreen({ onStartModule, onGoReview }: Props) {
       style={{ background: 'linear-gradient(160deg,#0f1923 0%,#1a2f4e 50%,#0d2137 100%)' }}>
       <div className="flex-1 flex flex-col items-center px-4 pt-8 pb-24">
         <div className="w-full max-w-md">
+
           {/* Header */}
           <div className="text-center mb-6">
-            <div className="text-5xl animate-bounce-slow mb-2">🇫🇷</div>
+            <div className="text-5xl mb-2">🇫🇷</div>
             <h1 className="text-3xl font-black text-white">
               French<span style={{ color: '#58cc02' }}>TCF</span>
             </h1>
@@ -53,8 +67,7 @@ export default function HomeScreen({ onStartModule, onGoReview }: Props) {
           {/* Error Banner */}
           {pendingErrors > 0 && (
             <button onClick={onGoReview}
-              className="w-full mb-4 flex items-center gap-3 px-4 py-3 rounded-xl border border-red-500/30 bg-red-500/10 text-left"
-            >
+              className="w-full mb-5 flex items-center gap-3 px-4 py-3 rounded-xl border border-red-500/30 bg-red-500/10 text-left">
               <span className="text-2xl">🔁</span>
               <div>
                 <p className="font-bold text-white text-sm">{pendingErrors} erros para revisar</p>
@@ -63,45 +76,78 @@ export default function HomeScreen({ onStartModule, onGoReview }: Props) {
             </button>
           )}
 
-          {/* Modules */}
-          <div className="flex flex-col gap-3">
-            {MODULES.map((mod) => {
-              const prog = progress[mod.id];
-              const total = mod.exercises.length;
-              const completed = prog?.completed || 0;
-              const pct = Math.round((completed / total) * 100);
+          {/* Learning Path */}
+          <div className="flex flex-col gap-6">
+            {SECTIONS.map((section) => {
+              const color = SECTION_COLORS[section.key];
+              const sectionModules = section.moduleIds
+                .map((id) => MODULES.find((m) => m.id === id))
+                .filter(Boolean) as typeof MODULES;
 
               return (
-                <button key={mod.id} onClick={() => onStartModule(mod.id)}
-                  className="w-full text-left px-4 py-3 rounded-2xl border flex items-center gap-3 transition-all hover:-translate-y-0.5"
-                  style={{ background: 'rgba(255,255,255,0.07)', borderColor: 'rgba(255,255,255,0.12)' }}
-                >
-                  <span className="text-3xl">{mod.icon}</span>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="font-bold text-white text-sm">{mod.name}</span>
-                      <span className="text-xs font-bold px-2 py-0.5 rounded-full ml-2 flex-shrink-0"
-                        style={{ background: LEVEL_COLOR[mod.level] + '33', color: LEVEL_COLOR[mod.level] }}>
-                        {mod.level}
-                      </span>
-                    </div>
-                    <p className="text-white/50 text-xs">{mod.desc}</p>
-                    <div className="mt-2 h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.1)' }}>
-                      <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: LEVEL_COLOR[mod.level] }} />
-                    </div>
-                    <p className="text-white/30 text-xs mt-1">{completed}/{total} exercícios</p>
+                <div key={section.key}>
+                  {/* Section Header */}
+                  <div className="mb-3 px-1">
+                    <h2 className="text-white font-black text-lg">{section.title}</h2>
+                    <p className="text-white/40 text-xs">{section.subtitle}</p>
                   </div>
-                </button>
+
+                  {/* Module Cards */}
+                  <div className="flex flex-col gap-2">
+                    {sectionModules.map((mod, idx) => {
+                      const prog = progress[mod.id];
+                      const total = mod.exercises.length;
+                      const done = prog?.completed ?? 0;
+                      const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+                      const isLocked = false; // future: unlock logic
+
+                      return (
+                        <button
+                          key={mod.id}
+                          onClick={() => !isLocked && onStartModule(mod.id)}
+                          disabled={isLocked}
+                          className="w-full text-left px-4 py-3 rounded-2xl border flex items-center gap-3 transition-all hover:-translate-y-0.5 active:scale-95 disabled:opacity-40"
+                          style={{ background: 'rgba(255,255,255,0.07)', borderColor: color + '44' }}
+                        >
+                          <div className="text-3xl w-10 text-center flex-shrink-0">
+                            {isLocked ? '🔒' : mod.icon}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between mb-0.5">
+                              <span className="font-bold text-white text-sm">{mod.name}</span>
+                              <span className="text-xs font-bold px-2 py-0.5 rounded-full ml-2 flex-shrink-0"
+                                style={{ background: color + '25', color }}>
+                                {mod.level}
+                              </span>
+                            </div>
+                            <p className="text-white/40 text-xs truncate">{mod.desc}</p>
+                            <div className="mt-2 h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.1)' }}>
+                              <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: color }} />
+                            </div>
+                            <p className="text-white/30 text-xs mt-1">{done}/{total} exercícios</p>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Coming soon placeholder */}
+                  <div className="mt-2 px-4 py-3 rounded-2xl border border-dashed flex items-center gap-3 opacity-30"
+                    style={{ borderColor: color + '55' }}>
+                    <span className="text-2xl">➕</span>
+                    <span className="text-white/50 text-sm">Mais blocos em breve...</span>
+                  </div>
+                </div>
               );
             })}
           </div>
+
         </div>
       </div>
 
       {/* Bottom Nav */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 flex">
-        <button className="flex-1 py-3 flex flex-col items-center gap-1"
-          style={{ color: '#58cc02' }}>
+        <button className="flex-1 py-3 flex flex-col items-center gap-1" style={{ color: '#58cc02' }}>
           <span className="text-xl">📚</span>
           <span className="text-xs font-bold">Lições</span>
         </button>

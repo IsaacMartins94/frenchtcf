@@ -6,13 +6,16 @@ interface Props {
 }
 
 const MODULE_NAMES: Record<string, string> = {
+  pres_b1: 'Présent — Bloco 1',
+  pres_b2: 'Présent — Bloco 2',
+  pres_b3: 'Présent — Bloco 3',
+  pc_b1: 'Passé Composé — Bloco 1',
+  pc_b2: 'Passé Composé — Bloco 2',
+  // legacy
   present_er: 'Verbos -ER',
   present_irreg: 'Irregulares',
   negation: 'Negação',
   interrogative: 'Interrogativas',
-  passe_compose: 'Passé Composé',
-  vocab_daily: 'Vocabulário',
-  conj_focus: 'Conjugação',
   verbs_top_1: 'Verbos Top — P1',
   verbs_top_2: 'Verbos Top — P2',
   verbs_top_3: 'Verbos Top — P3',
