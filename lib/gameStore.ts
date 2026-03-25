@@ -7,12 +7,14 @@ interface GameState {
   stats: UserStats;
   progress: Record<string, UserProgress>;
   errors: UserError[];
+  strengths: Record<string, number>; // question → 0-5
 
   updateStats: (s: Partial<UserStats>) => void;
   saveProgress: (p: UserProgress) => void;
   addError: (e: Omit<UserError, 'id'>) => void;
   masterError: (id: string) => void;
   deleteError: (id: string) => void;
+  updateStrength: (question: string, correct: boolean) => void;
 }
 
 export const useGameStore = create<GameState>()(
@@ -21,6 +23,7 @@ export const useGameStore = create<GameState>()(
       stats: { total_xp: 0, streak: 0, last_day: '' },
       progress: {},
       errors: [],
+      strengths: {},
 
       updateStats: (s) => set((state) => ({ stats: { ...state.stats, ...s } })),
 
@@ -45,6 +48,12 @@ export const useGameStore = create<GameState>()(
       deleteError: (id) => set((state) => ({
         errors: state.errors.filter((e) => e.id !== id),
       })),
+
+      updateStrength: (question, correct) => set((state) => {
+        const cur = state.strengths[question] ?? 2;
+        const next = correct ? Math.min(5, cur + 1) : Math.max(0, cur - 1);
+        return { strengths: { ...state.strengths, [question]: next } };
+      }),
     }),
     { name: 'french-tcf-v1' }
   )

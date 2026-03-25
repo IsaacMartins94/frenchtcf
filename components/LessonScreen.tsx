@@ -52,19 +52,32 @@ interface Props {
   onComplete: (xp: number, correct: number, total: number) => void;
 }
 
+const SESSION_SIZE = 20;
+
 export default function LessonScreen({ module, onBack, onComplete }: Props) {
-  const { progress, saveProgress, addError, updateStats, stats } = useGameStore();
+  const { progress, saveProgress, addError, updateStats, updateStrength, stats, strengths } = useGameStore();
 
   const prog = progress[module.id];
-  const [[exercises, exerciseIndices]] = useState<[Exercise[], number[]]>(() => {
+
+  // Build adaptive session of SESSION_SIZE exercises, prioritising weak ones
+  const [queue, setQueue] = useState<Exercise[]>(() => {
+    // If resuming, restore saved order
     if (prog?.exercise_order?.length) {
-      const exs = prog.exercise_order.map((i) => module.exercises[i]);
-      return [exs, prog.exercise_order];
+      return prog.exercise_order.map((i) => module.exercises[i]);
     }
-    const indices = shuffle([...Array(module.exercises.length).keys()]);
-    const exs = indices.map((i) => module.exercises[i]);
-    return [exs, indices];
+    // Sort by strength ascending (weaker first), then shuffle ties
+    const sorted = [...module.exercises].sort((a, b) => {
+      const sa = strengths[a.question] ?? 2;
+      const sb = strengths[b.question] ?? 2;
+      return sa - sb + (Math.random() - 0.5) * 0.5;
+    });
+    return sorted.slice(0, SESSION_SIZE);
   });
+
+  // exerciseIndices maps queue position → original module index (for saveProgress)
+  const exerciseIndices = queue.map((ex) =>
+    module.exercises.findIndex((e) => e.question === ex.question)
+  );
 
   const [current, setCurrent] = useState(prog?.last_idx || 0);
   const [xp, setXp] = useState(0);
@@ -84,7 +97,7 @@ export default function LessonScreen({ module, onBack, onComplete }: Props) {
   const [isCorrect, setIsCorrect] = useState(false);
   const [shakeKey, setShakeKey] = useState(0);
 
-  const activeExercises = mode === 'retry' ? wrongExercises : exercises;
+  const activeExercises = mode === 'retry' ? wrongExercises : queue;
   const ex = activeExercises[current];
   const progressPct = Math.round(((current + 1) / activeExercises.length) * 100);
 
@@ -113,7 +126,7 @@ export default function LessonScreen({ module, onBack, onComplete }: Props) {
   };
 
   const finishSession = useCallback((finalXp: number, finalCorrect: number) => {
-    const totalPct = Math.round((finalCorrect / exercises.length) * 100);
+    const totalPct = Math.round((finalCorrect / queue.length) * 100);
     const today = new Date().toDateString();
     if (totalPct >= 70) {
       const yesterday = new Date(Date.now() - 86400000).toDateString();
@@ -124,8 +137,8 @@ export default function LessonScreen({ module, onBack, onComplete }: Props) {
     } else {
       updateStats({ total_xp: stats.total_xp + finalXp });
     }
-    onComplete(finalXp, finalCorrect, exercises.length);
-  }, [exercises.length, stats, updateStats, onComplete]);
+    onComplete(finalXp, finalCorrect, queue.length);
+  }, [queue.length, stats, updateStats, onComplete]);
 
   const startRetry = () => {
     setMode('retry');
@@ -168,9 +181,11 @@ export default function LessonScreen({ module, onBack, onComplete }: Props) {
       playSound('correct');
       setXp((v) => v + 10);
       setCorrect((v) => v + 1);
+      updateStrength(ex.question, true);
     } else {
       playSound('wrong');
       setShakeKey((k) => k + 1);
+      updateStrength(ex.question, false);
       addError({
         module_id: module.id,
         question: ex.question,
@@ -179,8 +194,14 @@ export default function LessonScreen({ module, onBack, onComplete }: Props) {
         mastered: false,
         count: 1,
       });
-      // Collect for in-session retry (main mode only, no duplicates)
+      // Inject exercise back into queue ~4 positions later (main mode only)
       if (mode === 'main') {
+        setQueue((prev) => {
+          const insertAt = Math.min(current + 4, prev.length);
+          const next = [...prev];
+          next.splice(insertAt, 0, ex);
+          return next;
+        });
         setWrongExercises((prev) =>
           prev.some((e) => e.question === ex.question) ? prev : [...prev, ex]
         );
